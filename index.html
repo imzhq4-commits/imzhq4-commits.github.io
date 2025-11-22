@@ -1,98 +1,226 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>Sports Streams</title>
-<style>
-    body { background:#000; color:#fff; font-family:Arial; margin:0; padding:20px; }
-    h1 { text-align:center; }
-    h2 { margin-top:40px; }
-    .section { max-width:900px; margin:20px auto; }
-    iframe { width:100%; height:400px; border:0; background:#000; }
-    .category-title { font-size:28px; margin-top:50px; text-align:center; color:#0af; }
-</style>
+  <meta charset="UTF-8">
+  <title>Live Sports Streams</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+    body {
+      background:#000;
+      color:#fff;
+      font-family:Arial, sans-serif;
+      margin:0;
+      padding:0;
+    }
+
+    h1 {
+      text-align:center;
+      margin:20px 0 10px;
+    }
+
+    /* Tabs bar */
+    .tabs {
+      display:flex;
+      flex-wrap:wrap;
+      justify-content:center;
+      gap:8px;
+      padding:10px 5px 15px;
+      border-bottom:1px solid #222;
+    }
+
+    .tab-button {
+      background:#111;
+      color:#0af;
+      border:1px solid #0af;
+      border-radius:999px;
+      padding:8px 14px;
+      font-size:14px;
+      cursor:pointer;
+      outline:none;
+    }
+
+    .tab-button.active {
+      background:#0af;
+      color:#000;
+      font-weight:bold;
+    }
+
+    /* Tab content sections */
+    .tab-content {
+      display:none;
+      padding:10px 10px 40px;
+    }
+
+    .tab-content.active {
+      display:block;
+    }
+
+    .section {
+      max-width:900px;
+      margin:20px auto;
+      text-align:center;
+    }
+
+    .section h2 {
+      margin-bottom:10px;
+      font-size:18px;
+    }
+
+    iframe {
+      width:100%;
+      height:400px;
+      border:0;
+      background:#000;
+    }
+
+    .empty-message {
+      max-width:900px;
+      margin:40px auto;
+      text-align:center;
+      color:#888;
+      font-size:14px;
+    }
+  </style>
 </head>
 <body>
 
 <h1>Live Sports Streams</h1>
 
-<div id="footballEarly"><h2 class="category-title">⚽ Football (12:00–3:30 PM)</h2></div>
-<div id="footballLate"><h2 class="category-title">⚽ Football (3:31 PM–12:00 AM)</h2></div>
-<div id="basketball"><h2 class="category-title">🏀 Basketball</h2></div>
-<div id="fighting"><h2 class="category-title">🥊 Fighting</h2></div>
-<div id="other"><h2 class="category-title">🎮 Other Sports</h2></div>
+<!-- TAB BUTTONS -->
+<div class="tabs">
+  <button class="tab-button active" data-tab="football_early">
+    ⚽ Football (12:00–3:30 PM)
+  </button>
+  <button class="tab-button" data-tab="football_late">
+    ⚽ Football (3:31 PM–12:00 AM)
+  </button>
+  <button class="tab-button" data-tab="basketball">
+    🏀 Basketball
+  </button>
+  <button class="tab-button" data-tab="fighting">
+    🥊 Fighting
+  </button>
+  <button class="tab-button" data-tab="other">
+    🎮 Other Sports
+  </button>
+</div>
+
+<!-- TAB CONTENT AREAS -->
+<div id="football_early" class="tab-content active">
+  <div class="empty-message">No football streams between 12:00 and 3:30 PM yet.</div>
+</div>
+
+<div id="football_late" class="tab-content">
+  <div class="empty-message">No football streams between 3:31 PM and 12:00 AM yet.</div>
+</div>
+
+<div id="basketball" class="tab-content">
+  <div class="empty-message">No basketball streams yet.</div>
+</div>
+
+<div id="fighting" class="tab-content">
+  <div class="empty-message">No fighting streams yet.</div>
+</div>
+
+<div id="other" class="tab-content">
+  <div class="empty-message">No other sports streams yet.</div>
+</div>
 
 <script>
+// ---- CONFIG: YOUR GOOGLE SHEET JSON URL ----
 const SHEET_JSON_URL =
   "https://docs.google.com/spreadsheets/d/15PSX1c3VavO3KcTZWCdfVEheZNiBduTrYf4Bv4Klz3k/gviz/tq?gid=0&tqx=out:json"
   + "&cache=" + Date.now();
 
+// Simple time range helper (expects HH:MM 24h)
 function isBetween(time, start, end) {
-    return time >= start && time <= end;
+  if (!time) return false;
+  return time >= start && time <= end;
 }
 
-async function load() {
+// Tab switching
+const tabButtons = document.querySelectorAll(".tab-button");
+const tabContents = document.querySelectorAll(".tab-content");
+
+tabButtons.forEach(btn => {
+  btn.addEventListener("click", () => {
+    const target = btn.dataset.tab;
+
+    tabButtons.forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+
+    tabContents.forEach(content => {
+      content.classList.toggle("active", content.id === target);
+    });
+  });
+});
+
+async function loadStreams() {
+  try {
     const res = await fetch(SHEET_JSON_URL);
     const text = await res.text();
+
+    // Google Sheets gviz JSON needs cleaning
     const json = JSON.parse(text.substr(47).slice(0, -2));
     const rows = json.table.rows;
 
+    // Track if we added anything to each tab
+    const hasContent = {
+      football_early: false,
+      football_late: false,
+      basketball: false,
+      fighting: false,
+      other: false
+    };
+
     rows.forEach(row => {
-        let title = row.c[0]?.v || "";
-        let url   = row.c[1]?.v || "";
-        let category = row.c[2]?.v || "";
-        let time  = row.c[3]?.v || "";
+      let title    = row.c[0]?.v || "";
+      let url      = row.c[1]?.v || "";
+      let category = row.c[2]?.v || "";
+      let time     = row.c[3]?.v || "";
 
-        if (!url.startsWith("http")) return;
+      if (!url || !url.startsWith("http")) return;
 
-        // FOOTBALL EARLY (12–3:30)
-        if (category === "Football" && isBetween(time, "12:00", "15:30")) {
-            document.getElementById("footballEarly").innerHTML += `
-                <div class="section">
-                    <h2>${title} (${time})</h2>
-                    <iframe src="${url}" allowfullscreen></iframe>
-                </div>`;
-        }
+      // Decide which tab this row belongs in
+      let tabId = null;
 
-        // FOOTBALL LATE (3:31–12am)
-        else if (category === "Football" && isBetween(time, "15:31", "23:59")) {
-            document.getElementById("footballLate").innerHTML += `
-                <div class="section">
-                    <h2>${title} (${time})</h2>
-                    <iframe src="${url}" allowfullscreen></iframe>
-                </div>`;
-        }
+      if (category === "Football" && isBetween(time, "12:00", "15:30")) {
+        tabId = "football_early";
+      } else if (category === "Football" && isBetween(time, "15:31", "23:59")) {
+        tabId = "football_late";
+      } else if (category === "Basketball") {
+        tabId = "basketball";
+      } else if (category === "Fighting") {
+        tabId = "fighting";
+      } else if (category === "Other") {
+        tabId = "other";
+      }
 
-        // BASKETBALL
-        else if (category === "Basketball") {
-            document.getElementById("basketball").innerHTML += `
-                <div class="section">
-                    <h2>${title}</h2>
-                    <iframe src="${url}" allowfullscreen></iframe>
-                </div>`;
-        }
+      if (!tabId) return;
 
-        // FIGHTING
-        else if (category === "Fighting") {
-            document.getElementById("fighting").innerHTML += `
-                <div class="section">
-                    <h2>${title}</h2>
-                    <iframe src="${url}" allowfullscreen></iframe>
-                </div>`;
-        }
+      const tabDiv = document.getElementById(tabId);
+      if (!hasContent[tabId]) {
+        // remove "no streams" message the first time we add something
+        tabDiv.innerHTML = "";
+        hasContent[tabId] = true;
+      }
 
-        // OTHER
-        else if (category === "Other") {
-            document.getElementById("other").innerHTML += `
-                <div class="section">
-                    <h2>${title}</h2>
-                    <iframe src="${url}" allowfullscreen></iframe>
-                </div>`;
-        }
+      tabDiv.innerHTML += `
+        <div class="section">
+          <h2>${title} ${time ? `(${time})` : ""}</h2>
+          <iframe src="${url}" allowfullscreen
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; picture-in-picture">
+          </iframe>
+        </div>
+      `;
     });
+  } catch (e) {
+    console.error(e);
+  }
 }
 
-load();
+loadStreams();
 </script>
 
 </body>
