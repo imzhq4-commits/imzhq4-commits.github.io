@@ -16,17 +16,22 @@
 
     h1 {
       text-align:center;
-      margin:20px 0 10px;
+      margin:16px 0 10px;
+      font-size:24px;
     }
 
-    /* Tabs bar */
+    /* Tabs bar across top */
     .tabs {
       display:flex;
       flex-wrap:wrap;
       justify-content:center;
-      gap:8px;
-      padding:10px 5px 15px;
+      gap:6px;
+      padding:8px 6px 10px;
       border-bottom:1px solid #222;
+      background:#050505;
+      position:sticky;
+      top:0;
+      z-index:10;
     }
 
     .tab-button {
@@ -34,10 +39,11 @@
       color:#0af;
       border:1px solid #0af;
       border-radius:999px;
-      padding:8px 14px;
-      font-size:14px;
+      padding:6px 10px;
+      font-size:12px;
       cursor:pointer;
       outline:none;
+      white-space:nowrap;
     }
 
     .tab-button.active {
@@ -46,14 +52,9 @@
       font-weight:bold;
     }
 
-    /* Tab content sections */
-    .tab-content {
-      display:none;
+    /* Content area */
+    #content {
       padding:10px 10px 40px;
-    }
-
-    .tab-content.active {
-      display:block;
     }
 
     .section {
@@ -64,7 +65,7 @@
 
     .section h2 {
       margin-bottom:10px;
-      font-size:18px;
+      font-size:16px;
     }
 
     iframe {
@@ -74,12 +75,20 @@
       background:#000;
     }
 
-    .empty-message {
+    .message {
       max-width:900px;
-      margin:40px auto;
+      margin:30px auto;
       text-align:center;
-      color:#888;
+      color:#aaa;
       font-size:14px;
+    }
+
+    .loader {
+      max-width:900px;
+      margin:30px auto;
+      text-align:center;
+      font-size:14px;
+      color:#0af;
     }
   </style>
 </head>
@@ -87,140 +96,122 @@
 
 <h1>Live Sports Streams</h1>
 
-<!-- TAB BUTTONS -->
+<!-- TABS ACROSS THE TOP -->
 <div class="tabs">
-  <button class="tab-button active" data-tab="football_early">
-    ⚽ Football (12:00–3:30 PM)
+  <button class="tab-button active" data-category="Football A">
+    ⚽ Football 12:30–3:30 PM
   </button>
-  <button class="tab-button" data-tab="football_late">
-    ⚽ Football (3:31 PM–12:00 AM)
+  <button class="tab-button" data-category="Football B">
+    ⚽ Football 4:00–9:00 PM
   </button>
-  <button class="tab-button" data-tab="basketball">
+  <button class="tab-button" data-category="Basketball">
     🏀 Basketball
   </button>
-  <button class="tab-button" data-tab="fighting">
+  <button class="tab-button" data-category="Fighting">
     🥊 Fighting
   </button>
-  <button class="tab-button" data-tab="other">
-    🎮 Other Sports
+  <button class="tab-button" data-category="Other">
+    🎮 Other
   </button>
 </div>
 
-<!-- TAB CONTENT AREAS -->
-<div id="football_early" class="tab-content active">
-  <div class="empty-message">No football streams between 12:00 and 3:30 PM yet.</div>
-</div>
-
-<div id="football_late" class="tab-content">
-  <div class="empty-message">No football streams between 3:31 PM and 12:00 AM yet.</div>
-</div>
-
-<div id="basketball" class="tab-content">
-  <div class="empty-message">No basketball streams yet.</div>
-</div>
-
-<div id="fighting" class="tab-content">
-  <div class="empty-message">No fighting streams yet.</div>
-</div>
-
-<div id="other" class="tab-content">
-  <div class="empty-message">No other sports streams yet.</div>
+<!-- WHERE STREAMS WILL APPEAR -->
+<div id="content">
+  <div class="loader">Loading streams…</div>
 </div>
 
 <script>
-// ---- CONFIG: YOUR GOOGLE SHEET JSON URL ----
-const SHEET_JSON_URL =
-  "https://docs.google.com/spreadsheets/d/15PSX1c3VavO3KcTZWCdfVEheZNiBduTrYf4Bv4Klz3k/gviz/tq?gid=0&tqx=out:json"
-  + "&cache=" + Date.now();
+  // ---- CONFIG: YOUR SHEET ----
+  const SHEET_ID = "15PSX1c3VavO3KcTZWCdfVEheZNiBduTrYf4Bv4Klz3k";
+  const GID = "0"; // first tab in the spreadsheet
 
-// Simple time range helper (expects HH:MM 24h)
-function isBetween(time, start, end) {
-  if (!time) return false;
-  return time >= start && time <= end;
-}
+  const SHEET_JSON_URL =
+    "https://docs.google.com/spreadsheets/d/" + SHEET_ID +
+    "/gviz/tq?gid=" + GID + "&tqx=out:json&cache=" + Date.now();
 
-// Tab switching
-const tabButtons = document.querySelectorAll(".tab-button");
-const tabContents = document.querySelectorAll(".tab-content");
+  const tabButtons = document.querySelectorAll(".tab-button");
+  const contentDiv = document.getElementById("content");
 
-tabButtons.forEach(btn => {
-  btn.addEventListener("click", () => {
-    const target = btn.dataset.tab;
+  let allRows = [];          // will hold ALL data from sheet
+  let sheetLoaded = false;   // so we only fetch once
 
-    tabButtons.forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
+  // Switch active tab + show its category
+  tabButtons.forEach(btn => {
+    btn.addEventListener("click", () => {
+      tabButtons.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
 
-    tabContents.forEach(content => {
-      content.classList.toggle("active", content.id === target);
+      const category = btn.dataset.category;
+      showCategory(category);
     });
   });
-});
 
-async function loadStreams() {
-  try {
-    const res = await fetch(SHEET_JSON_URL);
-    const text = await res.text();
+  // Fetch sheet once, then filter by category when tabs are clicked
+  async function loadSheet() {
+    try {
+      const res = await fetch(SHEET_JSON_URL);
+      const text = await res.text();
 
-    // Google Sheets gviz JSON needs cleaning
-    const json = JSON.parse(text.substr(47).slice(0, -2));
-    const rows = json.table.rows;
+      // Clean Google gviz wrapper
+      const json = JSON.parse(text.substr(47).slice(0, -2));
+      const rows = json.table.rows || [];
 
-    // Track if we added anything to each tab
-    const hasContent = {
-      football_early: false,
-      football_late: false,
-      basketball: false,
-      fighting: false,
-      other: false
-    };
+      allRows = rows.map(r => ({
+        title:    r.c[0]?.v || "",
+        url:      r.c[1]?.v || "",
+        category: r.c[2]?.v || ""
+      }));
 
-    rows.forEach(row => {
-      let title    = row.c[0]?.v || "";
-      let url      = row.c[1]?.v || "";
-      let category = row.c[2]?.v || "";
-      let time     = row.c[3]?.v || "";
+      sheetLoaded = true;
 
-      if (!url || !url.startsWith("http")) return;
+      // Show default tab (Football A)
+      showCategory("Football A");
+    } catch (err) {
+      console.error(err);
+      contentDiv.innerHTML =
+        '<div class="message">Could not load data from Google Sheets. Check sharing / publish settings.</div>';
+    }
+  }
 
-      // Decide which tab this row belongs in
-      let tabId = null;
+  // Render streams for given category
+  function showCategory(categoryName) {
+    if (!sheetLoaded) {
+      // If user clicks quickly before sheet has loaded
+      contentDiv.innerHTML = '<div class="loader">Loading streams…</div>';
+      return;
+    }
 
-      if (category === "Football" && isBetween(time, "12:00", "15:30")) {
-        tabId = "football_early";
-      } else if (category === "Football" && isBetween(time, "15:31", "23:59")) {
-        tabId = "football_late";
-      } else if (category === "Basketball") {
-        tabId = "basketball";
-      } else if (category === "Fighting") {
-        tabId = "fighting";
-      } else if (category === "Other") {
-        tabId = "other";
-      }
+    const items = allRows.filter(
+      row => row.category && row.category.trim().toLowerCase() === categoryName.toLowerCase()
+    );
 
-      if (!tabId) return;
+    if (!items.length) {
+      contentDiv.innerHTML =
+        '<div class="message">No streams found for <strong>' + categoryName + '</strong> yet.</div>';
+      return;
+    }
 
-      const tabDiv = document.getElementById(tabId);
-      if (!hasContent[tabId]) {
-        // remove "no streams" message the first time we add something
-        tabDiv.innerHTML = "";
-        hasContent[tabId] = true;
-      }
+    let html = "";
+    items.forEach(item => {
+      if (!item.url || !item.url.startsWith("http")) return;
 
-      tabDiv.innerHTML += `
+      html += `
         <div class="section">
-          <h2>${title} ${time ? `(${time})` : ""}</h2>
-          <iframe src="${url}" allowfullscreen
+          <h2>${item.title}</h2>
+          <iframe
+            src="${item.url}"
+            allowfullscreen
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; picture-in-picture">
           </iframe>
         </div>
       `;
     });
-  } catch (e) {
-    console.error(e);
-  }
-}
 
-loadStreams();
+    contentDiv.innerHTML = html || '<div class="message">No valid links for this category.</div>';
+  }
+
+  // Initial load
+  loadSheet();
 </script>
 
 </body>
