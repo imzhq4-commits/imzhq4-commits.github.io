@@ -1,14 +1,10 @@
-// ==========================
-// IPTV Cinema (Fixed Version)
-// API goes through Render proxy (HTTPS)
-// Video streaming goes directly (fast)
-// ==========================
+// IPTV Cinema frontend-only client using Xtream Codes + corsproxy.io
+// API uses proxy (JSON only), video loads direct (no proxy).
 
-const API_PROXY = "https://proxy-github-io-fe2z.onrender.com/";  
-// Do NOT add extra slashes
+const corsProxyPrefix = "https://corsproxy.io/?";
 
 let state = {
-  baseUrl: "",
+  baseServer: "",
   username: "",
   password: "",
   categories: [],
@@ -16,107 +12,134 @@ let state = {
   activeCategoryId: "all"
 };
 
-// Remove trailing slashes
-function clean(url) {
+// Helper: strip trailing slashes
+function cleanUrl(url) {
   return url.replace(/\/+$/, "");
 }
 
-// Proxy API (only API, NOT video)
-function api(url) {
-  return API_PROXY + url;
+// Build proxied URL for API
+function proxied(url) {
+  return corsProxyPrefix + url;
 }
 
-// MAIN
 document.addEventListener("DOMContentLoaded", () => {
   const loginForm = document.getElementById("login-form");
-  const status = document.getElementById("status");
+  const statusEl = document.getElementById("status");
+
   const categoryRow = document.getElementById("category-row");
   const channelGrid = document.getElementById("channel-grid");
   const player = document.getElementById("player");
-  const title = document.getElementById("current-title");
+  const currentTitle = document.getElementById("current-title");
 
+  // ======================
   // LOGIN HANDLER
+  // ======================
   loginForm.addEventListener("submit", async (e) => {
     e.preventDefault();
 
-    // Get user input
-    state.baseUrl = clean(document.getElementById("serverUrl").value.trim());
-    state.username = document.getElementById("username").value.trim();
-    state.password = document.getElementById("password").value.trim();
+    const serverInput = document.getElementById("serverUrl").value.trim();
+    const usernameInput = document.getElementById("username").value.trim();
+    const passwordInput = document.getElementById("password").value.trim();
 
-    if (!state.baseUrl || !state.username || !state.password) {
-      showStatus("Missing required fields.", true);
+    if (!serverInput || !usernameInput || !passwordInput) {
+      setStatus("Please fill server, username and password.", true);
       return;
     }
 
-    showStatus("Login OK. Loading data…");
+    state.baseServer = cleanUrl(serverInput);
+    state.username = usernameInput;
+    state.password = passwordInput;
+
+    setStatus("Connecting to server...", false);
 
     try {
-      // --------------------------
-      // 1. LOGIN
-      // --------------------------
+      // 1. CHECK LOGIN (API)
       const loginUrl =
-        `${state.baseUrl}/player_api.php?username=${state.username}&password=${state.password}`;
+        `${state.baseServer}/player_api.php` +
+        `?username=${encodeURIComponent(state.username)}` +
+        `&password=${encodeURIComponent(state.password)}`;
 
-      const loginResp = await fetch(api(loginUrl));
+      const loginResp = await fetch(proxied(loginUrl));
       const loginData = await loginResp.json();
 
       if (!loginData.user_info || loginData.user_info.status !== "Active") {
-        showStatus("Login failed. Check username/password.", true);
+        setStatus("Login failed. Check credentials.", true);
         return;
       }
 
-      // --------------------------
-      // 2. LIVE CATEGORIES
-      // --------------------------
+      setStatus("Login OK. Loading categories...");
+
+      // 2. GET LIVE CATEGORIES (API)
       const catUrl =
-        `${state.baseUrl}/player_api.php?username=${state.username}&password=${state.password}&action=get_live_categories`;
+        `${state.baseServer}/player_api.php` +
+        `?username=${encodeURIComponent(state.username)}` +
+        `&password=${encodeURIComponent(state.password)}` +
+        `&action=get_live_categories`;
 
-      const catResp = await fetch(api(catUrl));
-      state.categories = await catResp.json();
+      const catResp = await fetch(proxied(catUrl));
+      const catData = await catResp.json();
 
-      // --------------------------
-      // 3. LIVE CHANNELS
-      // --------------------------
+      if (!Array.isArray(catData)) {
+        setStatus("No categories found.", true);
+        return;
+      }
+
+      state.categories = catData;
+
+      // 3. GET LIVE CHANNELS (API)
+      setStatus("Loading channels...");
+
       const chUrl =
-        `${state.baseUrl}/player_api.php?username=${state.username}&password=${state.password}&action=get_live_streams`;
+        `${state.baseServer}/player_api.php` +
+        `?username=${encodeURIComponent(state.username)}` +
+        `&password=${encodeURIComponent(state.password)}` +
+        `&action=get_live_streams`;
 
-      const chResp = await fetch(api(chUrl));
-      state.channels = await chResp.json();
+      const chResp = await fetch(proxied(chUrl));
+      const chData = await chResp.json();
 
-      showStatus(`Loaded ${state.channels.length} channels.`, false, true);
+      if (!Array.isArray(chData)) {
+        setStatus("No channels returned by server.", true);
+        return;
+      }
 
-      buildCategories(categoryRow);
-      buildChannels(channelGrid, title, player);
+      state.channels = chData;
+      setStatus(`Loaded ${state.channels.length} channels.`, false, true);
 
-    } catch (error) {
-      console.error("ERROR:", error);
-      showStatus("Server error. Try again.", true);
+      // BUILD UI
+      renderCategories(categoryRow);
+      renderChannels(channelGrid, currentTitle, player);
+
+    } catch (err) {
+      console.error("Login/load error:", err);
+      setStatus("Connection failed. Proxy may be overloaded.", true);
     }
   });
 
-  // STATUS MESSAGES
-  function showStatus(msg, error = false, success = false) {
-    status.textContent = msg;
-    status.classList.remove("error", "success");
-    if (error) status.classList.add("error");
-    if (success) status.classList.add("success");
+  // ======================
+  // STATUS BAR
+  // ======================
+  function setStatus(message, isError = false, isSuccess = false) {
+    statusEl.textContent = message;
+    statusEl.classList.remove("error", "success");
+    if (isError) statusEl.classList.add("error");
+    if (isSuccess) statusEl.classList.add("success");
   }
 
-  // ==========================
-  // BUILD CATEGORIES
-  // ==========================
-  function buildCategories(container) {
+  // ======================
+  // RENDER CATEGORIES
+  // ======================
+  function renderCategories(container) {
     container.innerHTML = "";
 
-    // "All" button
+    // "All" category
     const all = document.createElement("div");
     all.className = "category-pill active";
     all.textContent = "All";
     all.onclick = () => {
       state.activeCategoryId = "all";
-      highlight(container);
-      buildChannels(
+      highlightActiveCategory(container);
+      renderChannels(
         document.getElementById("channel-grid"),
         document.getElementById("current-title"),
         document.getElementById("player")
@@ -124,59 +147,66 @@ document.addEventListener("DOMContentLoaded", () => {
     };
     container.appendChild(all);
 
-    // Each category
+    // Other categories
     state.categories.forEach(cat => {
       const pill = document.createElement("div");
       pill.className = "category-pill";
-      pill.dataset.id = cat.category_id;
+      pill.dataset.id = String(cat.category_id);
       pill.textContent = cat.category_name;
+
       pill.onclick = () => {
-        state.activeCategoryId = String(cat.category_id);
-        highlight(container);
-        buildChannels(
+        state.activeCategoryId = pill.dataset.id;
+        highlightActiveCategory(container);
+        renderChannels(
           document.getElementById("channel-grid"),
           document.getElementById("current-title"),
           document.getElementById("player")
         );
       };
+
       container.appendChild(pill);
     });
   }
 
-  // Highlight selected category
-  function highlight(container) {
-    container.querySelectorAll(".category-pill").forEach(p => {
-      p.classList.remove("active");
+  function highlightActiveCategory(container) {
+    container.querySelectorAll(".category-pill").forEach(pill => {
+      pill.classList.remove("active");
       if (
-        p.dataset.id === state.activeCategoryId ||
-        (state.activeCategoryId === "all" && !p.dataset.id)
+        pill.dataset.id === state.activeCategoryId ||
+        (state.activeCategoryId === "all" && !pill.dataset.id)
       ) {
-        p.classList.add("active");
+        pill.classList.add("active");
       }
     });
   }
 
-  // ==========================
-  // BUILD CHANNELS
-  // ==========================
-  function buildChannels(grid, titleEl, videoEl) {
+  // ======================
+  // RENDER CHANNELS
+  // ======================
+  function renderChannels(grid, titleEl, videoEl) {
     grid.innerHTML = "";
 
     const filtered =
       state.activeCategoryId === "all"
         ? state.channels
-        : state.channels.filter(
-            c => String(c.category_id) === state.activeCategoryId
+        : state.channels.filter(ch =>
+            String(ch.category_id) === state.activeCategoryId
           );
 
     filtered.forEach(ch => {
       const card = document.createElement("div");
       card.className = "channel-card";
 
-      card.innerHTML = `
-        <div class="channel-name">${ch.name}</div>
-        <div class="channel-meta">LIVE</div>
-      `;
+      const name = document.createElement("div");
+      name.className = "channel-name";
+      name.textContent = ch.name;
+
+      const meta = document.createElement("div");
+      meta.className = "channel-meta";
+      meta.textContent = "LIVE";
+
+      card.appendChild(name);
+      card.appendChild(meta);
 
       card.onclick = () => playChannel(ch, titleEl, videoEl);
 
@@ -184,16 +214,41 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // ==========================
-  // PLAY VIDEO (DIRECT STREAM)
-  // ==========================
-  function playChannel(ch, titleEl, videoEl) {
-    titleEl.textContent = ch.name;
+  // ======================
+  // PLAY VIDEO (DIRECT — NO PROXY)
+  // ======================
+  function playChannel(channel, titleEl, videoEl) {
+    titleEl.textContent = channel.name;
 
+    // DIRECT VIDEO URL (fixed)
     const streamUrl =
-      `${state.baseUrl}/live/${state.username}/${state.password}/${ch.stream_id}.m3u8`;
+      `${state.baseServer}/live/` +
+      `${encodeURIComponent(state.username)}/` +
+      `${encodeURIComponent(state.password)}/` +
+      `${channel.stream_id}.m3u8`;
 
+    console.log("Playing:", streamUrl);
+
+    // Safari / iOS native support
+    if (videoEl.canPlayType("application/vnd.apple.mpegurl")) {
+      videoEl.src = streamUrl;
+      videoEl.play().catch(err => console.error("Play error:", err));
+      return;
+    }
+
+    // Other browsers using HLS.js
+    if (window.Hls && window.Hls.isSupported()) {
+      const hls = new Hls();
+      hls.loadSource(streamUrl);
+      hls.attachMedia(videoEl);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        videoEl.play().catch(err => console.error("Play error:", err));
+      });
+      return;
+    }
+
+    // Fallback
     videoEl.src = streamUrl;
-    videoEl.play().catch(e => console.error("Play error:", e));
+    videoEl.play().catch(err => console.error("Play error:", err));
   }
 });
