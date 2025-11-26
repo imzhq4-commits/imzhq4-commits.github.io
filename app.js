@@ -1,279 +1,201 @@
-// IPTV Cinema frontend-only client using Xtream Codes + corsproxy.io
-// No backend required.
-
-const corsProxyPrefix = "https://corsproxy.io/?";
+const proxy = "https://api.allorigins.win/raw?url=";
 
 let state = {
-  baseServer: "",
-  username: "",
-  password: "",
-  categories: [],
-  channels: [],
-  activeCategoryId: "all"
+  server: "",
+  user: "",
+  pass: "",
+  liveCats: [],
+  vodCats: [],
+  seriesCats: [],
+  liveStreams: [],
+  vodStreams: [],
+  seriesList: [],
+  activeTab: "live",
+  activeCategory: "all"
 };
 
-// Helper: strip trailing slashes
-function cleanUrl(url) {
-  return url.replace(/\/+$/, "");
-}
-
-// Build proxied URL
 function proxied(url) {
-  // corsproxy.io expects: https://corsproxy.io/?http://example.com/...
-  return corsProxyPrefix + url;
+  return proxy + encodeURIComponent(url);
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+
   const loginForm = document.getElementById("login-form");
   const statusEl = document.getElementById("status");
-
-  const categoryRow = document.getElementById("category-row");
-  const channelGrid = document.getElementById("channel-grid");
+  const tabs = document.querySelectorAll(".tab-btn");
+  const sidebarList = document.getElementById("sidebar-list");
+  const contentGrid = document.getElementById("content-grid");
   const player = document.getElementById("player");
-  const currentTitle = document.getElementById("current-title");
+  const titleEl = document.getElementById("current-title");
 
   loginForm.addEventListener("submit", async (e) => {
     e.preventDefault();
 
-    const serverInput = document.getElementById("serverUrl").value.trim();
-    const usernameInput = document.getElementById("username").value.trim();
-    const passwordInput = document
-      .getElementById("password")
-      .value.trim();
+    state.server = document.getElementById("serverUrl").value.trim();
+    state.user = document.getElementById("username").value.trim();
+    state.pass = document.getElementById("password").value.trim();
 
-    if (!serverInput || !usernameInput || !passwordInput) {
-      setStatus("Please fill server, username and password.", true);
-      return;
-    }
+    if (!state.server || !state.user || !state.pass)
+      return setStatus("Please fill all fields", true);
 
-    state.baseServer = cleanUrl(serverInput);
-    state.username = usernameInput;
-    state.password = passwordInput;
+    setStatus("Logging in...");
 
-    setStatus("Connecting to server...", false);
+    const loginUrl =
+      `${state.server}/player_api.php?username=${state.user}&password=${state.pass}`;
 
     try {
-      // 1) Check login
-      const loginUrl =
-        `${state.baseServer}/player_api.php` +
-        `?username=${encodeURIComponent(state.username)}` +
-        `&password=${encodeURIComponent(state.password)}`;
+      const res = await fetch(proxied(loginUrl));
+      const data = await res.json();
 
-      const loginResp = await fetch(proxied(loginUrl));
-      const loginData = await loginResp.json();
+      if (!data.user_info || data.user_info.status !== "Active")
+        return setStatus("Login failed", true);
 
-      if (
-        !loginData.user_info ||
-        loginData.user_info.status !== "Active"
-      ) {
-        setStatus(
-          "Login failed or account not active. Check credentials.",
-          true
-        );
-        console.log("Login data:", loginData);
-        return;
-      }
+      setStatus("Loading categories...");
+      await loadAllData();
+      renderUI();
 
-      setStatus("Login OK. Loading categories...", false);
-
-      // 2) Load categories
-      const catUrl =
-        `${state.baseServer}/player_api.php` +
-        `?username=${encodeURIComponent(state.username)}` +
-        `&password=${encodeURIComponent(state.password)}` +
-        `&action=get_live_categories`;
-
-      const catResp = await fetch(proxied(catUrl));
-      const catData = await catResp.json();
-
-      if (!Array.isArray(catData) || catData.length === 0) {
-        setStatus("No live categories found.", true);
-        return;
-      }
-
-      state.categories = catData;
-
-      // 3) Load channels
-      setStatus("Loading channels...", false);
-
-      const chUrl =
-        `${state.baseServer}/player_api.php` +
-        `?username=${encodeURIComponent(state.username)}` +
-        `&password=${encodeURIComponent(state.password)}` +
-        `&action=get_live_streams`;
-
-      const chResp = await fetch(proxied(chUrl));
-      const chData = await chResp.json();
-
-      if (!Array.isArray(chData) || chData.length === 0) {
-        setStatus("No live channels returned by server.", true);
-        return;
-      }
-
-      state.channels = chData;
-      setStatus(
-        `Loaded ${state.channels.length} channels.`,
-        false,
-        true
-      );
-
-      // Build UI
-      renderCategories(categoryRow);
-      state.activeCategoryId = "all";
-      renderChannels(channelGrid, currentTitle, player);
     } catch (err) {
-      console.error("Error during login / load:", err);
-      setStatus(
-        "Connection failed. Server may be offline or blocking requests.",
-        true
-      );
+      setStatus("Server error", true);
     }
   });
 
-  function setStatus(message, isError = false, isSuccess = false) {
-    statusEl.textContent = message || "";
-    statusEl.classList.remove("error", "success");
-    if (isError) statusEl.classList.add("error");
-    if (isSuccess) statusEl.classList.add("success");
+  async function loadAllData() {
+    const base = `${state.server}/player_api.php?username=${state.user}&password=${state.pass}`;
+
+    const liveCats = await fetch(proxied(base + "&action=get_live_categories")).then(r=>r.json());
+    const vodCats = await fetch(proxied(base + "&action=get_vod_categories")).then(r=>r.json());
+    const seriesCats = await fetch(proxied(base + "&action=get_series_categories")).then(r=>r.json());
+
+    const live = await fetch(proxied(base + "&action=get_live_streams")).then(r=>r.json());
+    const vod = await fetch(proxied(base + "&action=get_vod_streams")).then(r=>r.json());
+    const series = await fetch(proxied(base + "&action=get_series")).then(r=>r.json());
+
+    state.liveCats = liveCats;
+    state.vodCats = vodCats;
+    state.seriesCats = seriesCats;
+
+    state.liveStreams = live;
+    state.vodStreams = vod;
+    state.seriesList = series;
+
+    setStatus("Loaded ✔", false, true);
   }
 
-  function renderCategories(container) {
-    container.innerHTML = "";
+  function renderUI() {
+    renderTabs();
+    renderSidebar();
+    renderContent();
+  }
 
-    // "All" pill
-    const allPill = document.createElement("div");
-    allPill.className = "category-pill";
-    allPill.textContent = "All";
-    allPill.onclick = () => {
-      state.activeCategoryId = "all";
-      highlightActiveCategory(container);
-      renderChannels(
-        document.getElementById("channel-grid"),
-        document.getElementById("current-title"),
-        document.getElementById("player")
-      );
-    };
-    container.appendChild(allPill);
-
-    // Other categories
-    state.categories.forEach((cat) => {
-      const pill = document.createElement("div");
-      pill.className = "category-pill";
-      pill.textContent = cat.category_name || `Cat ${cat.category_id}`;
-      pill.dataset.id = String(cat.category_id);
-
-      pill.onclick = () => {
-        state.activeCategoryId = String(cat.category_id);
-        highlightActiveCategory(container);
-        renderChannels(
-          document.getElementById("channel-grid"),
-          document.getElementById("current-title"),
-          document.getElementById("player")
-        );
+  function renderTabs() {
+    const tabs = document.querySelectorAll(".tab-btn");
+    tabs.forEach(btn => {
+      btn.onclick = () => {
+        tabs.forEach(x => x.classList.remove("active"));
+        btn.classList.add("active");
+        state.activeTab = btn.dataset.tab;
+        renderSidebar();
+        renderContent();
       };
-
-      container.appendChild(pill);
-    });
-
-    highlightActiveCategory(container);
-  }
-
-  function highlightActiveCategory(container) {
-    const pills = container.querySelectorAll(".category-pill");
-    pills.forEach((pill) => {
-      pill.classList.remove("active");
-      const id = pill.dataset.id || "all";
-      if (id === state.activeCategoryId) {
-        pill.classList.add("active");
-      } else if (
-        state.activeCategoryId === "all" &&
-        !pill.dataset.id
-      ) {
-        pill.classList.add("active");
-      }
     });
   }
 
-  function renderChannels(grid, titleEl, videoEl) {
-    grid.innerHTML = "";
+  function renderSidebar() {
+    sidebarList.innerHTML = "";
 
-    const filtered =
-      state.activeCategoryId === "all"
-        ? state.channels
-        : state.channels.filter(
-            (ch) =>
-              String(ch.category_id) === state.activeCategoryId
-          );
+    let categories = [];
 
-    if (!filtered.length) {
-      const div = document.createElement("div");
-      div.textContent = "No channels in this category.";
-      div.style.opacity = "0.7";
-      grid.appendChild(div);
-      return;
+    if (state.activeTab === "live") categories = state.liveCats;
+    if (state.activeTab === "movies") categories = state.vodCats;
+    if (state.activeTab === "series") categories = state.seriesCats;
+
+    const all = document.createElement("div");
+    all.className = "sidebar-item";
+    all.textContent = "All";
+    all.onclick = ()=>{ state.activeCategory="all"; renderContent(); };
+    sidebarList.appendChild(all);
+
+    categories.forEach(cat => {
+      const item = document.createElement("div");
+      item.className = "sidebar-item";
+      item.textContent = cat.category_name;
+      item.onclick = () => {
+        state.activeCategory = cat.category_id;
+        renderContent();
+      };
+      sidebarList.appendChild(item);
+    });
+  }
+
+  function renderContent() {
+    contentGrid.innerHTML = "";
+
+    let list = [];
+
+    if (state.activeTab === "live") {
+      list = state.activeCategory==="all"
+        ? state.liveStreams
+        : state.liveStreams.filter(x=>String(x.category_id)===String(state.activeCategory));
     }
 
-    filtered.forEach((ch) => {
+    if (state.activeTab === "movies") {
+      list = state.activeCategory==="all"
+        ? state.vodStreams
+        : state.vodStreams.filter(x=>String(x.category_id)===String(state.activeCategory));
+    }
+
+    if (state.activeTab === "series") {
+      list = state.activeCategory==="all"
+        ? state.seriesList
+        : state.seriesList.filter(x=>String(x.category_id)===String(state.activeCategory));
+    }
+
+    list.forEach(item => {
       const card = document.createElement("div");
-      card.className = "channel-card";
+      card.className = "card";
 
-      const name = document.createElement("div");
-      name.className = "channel-name";
-      name.textContent = ch.name || ch.stream_name || "Channel";
+      card.innerHTML = `<div class="card-title">${item.name || item.stream_name}</div>`;
 
-      const meta = document.createElement("div");
-      meta.className = "channel-meta";
-      meta.textContent = ch.stream_type
-        ? ch.stream_type.toUpperCase()
-        : "LIVE";
-
-      card.appendChild(name);
-      card.appendChild(meta);
-
-      card.onclick = () => {
-        playChannel(ch, titleEl, videoEl);
-      };
-
-      grid.appendChild(card);
+      card.onclick = () => playItem(item);
+      contentGrid.appendChild(card);
     });
   }
 
-  function playChannel(channel, titleEl, videoEl) {
-    titleEl.textContent =
-      channel.name || channel.stream_name || "Channel";
+  function playItem(item) {
+    titleEl.textContent = item.name;
 
-    // Xtream streaming URL
-    const rawStream =
-      `${state.baseServer}/live/` +
-      `${encodeURIComponent(state.username)}/` +
-      `${encodeURIComponent(state.password)}/` +
-      `${channel.stream_id}.m3u8`;
+    let url = "";
 
-    // Send through proxy so it's HTTPS too
-    const streamUrl = proxied(rawStream);
+    if (state.activeTab === "live") {
+      url = `${state.server}/live/${state.user}/${state.pass}/${item.stream_id}.m3u8`;
+    }
 
-    // Use HLS.js if needed
-    if (videoEl.canPlayType("application/vnd.apple.mpegurl")) {
-      // Safari & iOS
-      videoEl.src = streamUrl;
-      videoEl.play().catch((err) => {
-        console.error("Play error:", err);
-      });
-    } else if (window.Hls && window.Hls.isSupported()) {
+    if (state.activeTab === "movies") {
+      url = `${state.server}/movie/${state.user}/${state.pass}/${item.stream_id}.mp4`;
+    }
+
+    if (state.activeTab === "series") {
+      url = `${state.server}/series/${state.user}/${state.pass}/${item.series_id}.mp4`;
+    }
+
+    const final = proxied(url);
+
+    if (Hls.isSupported()) {
       const hls = new Hls();
-      hls.loadSource(streamUrl);
-      hls.attachMedia(videoEl);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        videoEl
-          .play()
-          .catch((err) => console.error("Play error:", err));
-      });
+      hls.loadSource(final);
+      hls.attachMedia(player);
+      hls.on(Hls.Events.MANIFEST_PARSED,()=>player.play());
     } else {
-      // Fallback
-      videoEl.src = streamUrl;
-      videoEl
-        .play()
-        .catch((err) => console.error("Play error:", err));
+      player.src = final;
+      player.play();
     }
   }
+
+  function setStatus(msg, error=false, success=false) {
+    statusEl.textContent = msg;
+    statusEl.className = "status-bar";
+    if (error) statusEl.classList.add("error");
+    if (success) statusEl.classList.add("success");
+  }
+
 });
