@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>IPTV Cinema</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+</head>
+<body>
+  <div class="app">
+    <!-- Top bar / login -->
+    <header class="top-bar">
+      <div class="logo">IPTV<span>Cinema</span></div>
+      <form id="login-form" class="login-form">
+        <input id="serverUrl" placeholder="Server URL (e.g. http://line.din-ott.com)" />
+        <input id="username" placeholder="Username" />
+        <input id="password" type="password" placeholder="Password" />
+        <button type="submit">Connect</button>
+      </form>
+    </header>
+
+    <!-- Status -->
+    <div id="status" class="status-bar"></div>
+
+    <!-- Main layout -->
+    <main class="main">
+      <!-- Left: categories & channels -->
+      <section class="left-panel">
+        <div class="section-title">Categories</div>
+        <div id="category-row" class="category-row"></div>
+
+        <div class="section-title">Channels</div>
+        <div id="channel-grid" class="channel-grid"></div>
+      </section>
+
+      <!-- Right: player -->
+      <section class="right-panel">
+        <h2 id="current-title" class="current-title">Select a channel</h2>
+        <video id="player" controls playsinline></video>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
