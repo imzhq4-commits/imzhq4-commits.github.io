@@ -1,33 +1,51 @@
-const proxy = "https://api.allorigins.win/raw?url=";
+// =====================================================
+// IPTV Cinema - Full Xtream Codes Player
+// API Proxy: AllOrigins
+// VIDEO Proxy: Elfsight (HLS streaming capable)
+// =====================================================
+
+// API proxy (JSON only)
+const apiProxy = "https://api.allorigins.win/raw?url=";
+
+// VIDEO proxy (HLS + MP4 capable)
+const videoProxy = "https://cors-proxy.elfsight.com/?url=";
+
+function proxyAPI(url) {
+  return apiProxy + encodeURIComponent(url);
+}
+
+function proxyVIDEO(url) {
+  return videoProxy + encodeURIComponent(url);
+}
+
+// ==================================================================
 
 let state = {
   server: "",
   user: "",
   pass: "",
+  activeTab: "live",
+  activeCategory: "all",
   liveCats: [],
   vodCats: [],
   seriesCats: [],
   liveStreams: [],
   vodStreams: [],
-  seriesList: [],
-  activeTab: "live",
-  activeCategory: "all"
+  seriesList: []
 };
-
-function proxied(url) {
-  return proxy + encodeURIComponent(url);
-}
 
 document.addEventListener("DOMContentLoaded", () => {
 
   const loginForm = document.getElementById("login-form");
   const statusEl = document.getElementById("status");
-  const tabs = document.querySelectorAll(".tab-btn");
   const sidebarList = document.getElementById("sidebar-list");
   const contentGrid = document.getElementById("content-grid");
-  const player = document.getElementById("player");
   const titleEl = document.getElementById("current-title");
+  const player = document.getElementById("player");
 
+  // ----------------------------
+  // LOGIN
+  // ----------------------------
   loginForm.addEventListener("submit", async (e) => {
     e.preventDefault();
 
@@ -35,8 +53,10 @@ document.addEventListener("DOMContentLoaded", () => {
     state.user = document.getElementById("username").value.trim();
     state.pass = document.getElementById("password").value.trim();
 
-    if (!state.server || !state.user || !state.pass)
-      return setStatus("Please fill all fields", true);
+    if (!state.server || !state.user || !state.pass) {
+      setStatus("Please fill all fields", true);
+      return;
+    }
 
     setStatus("Logging in...");
 
@@ -44,81 +64,89 @@ document.addEventListener("DOMContentLoaded", () => {
       `${state.server}/player_api.php?username=${state.user}&password=${state.pass}`;
 
     try {
-      const res = await fetch(proxied(loginUrl));
-      const data = await res.json();
+      const loginResp = await fetch(proxyAPI(loginUrl));
+      const loginData = await loginResp.json();
 
-      if (!data.user_info || data.user_info.status !== "Active")
-        return setStatus("Login failed", true);
+      if (!loginData.user_info || loginData.user_info.status !== "Active") {
+        return setStatus("Login failed. Wrong username/password.", true);
+      }
 
-      setStatus("Loading categories...");
+      setStatus("Login OK. Loading data...");
       await loadAllData();
-      renderUI();
+      setupTabs();
+      renderSidebar();
+      renderContent();
+
+      setStatus("Loaded ✔", false, true);
 
     } catch (err) {
-      setStatus("Server error", true);
+      console.error(err);
+      setStatus("Server error. Try again.", true);
     }
   });
 
+  // ----------------------------
+  // LOAD ALL API DATA
+  // ----------------------------
   async function loadAllData() {
     const base = `${state.server}/player_api.php?username=${state.user}&password=${state.pass}`;
 
-    const liveCats = await fetch(proxied(base + "&action=get_live_categories")).then(r=>r.json());
-    const vodCats = await fetch(proxied(base + "&action=get_vod_categories")).then(r=>r.json());
-    const seriesCats = await fetch(proxied(base + "&action=get_series_categories")).then(r=>r.json());
+    state.liveCats   = await fetch(proxyAPI(base + "&action=get_live_categories")).then(r=>r.json());
+    state.vodCats    = await fetch(proxyAPI(base + "&action=get_vod_categories")).then(r=>r.json());
+    state.seriesCats = await fetch(proxyAPI(base + "&action=get_series_categories")).then(r=>r.json());
 
-    const live = await fetch(proxied(base + "&action=get_live_streams")).then(r=>r.json());
-    const vod = await fetch(proxied(base + "&action=get_vod_streams")).then(r=>r.json());
-    const series = await fetch(proxied(base + "&action=get_series")).then(r=>r.json());
-
-    state.liveCats = liveCats;
-    state.vodCats = vodCats;
-    state.seriesCats = seriesCats;
-
-    state.liveStreams = live;
-    state.vodStreams = vod;
-    state.seriesList = series;
-
-    setStatus("Loaded ✔", false, true);
+    state.liveStreams = await fetch(proxyAPI(base + "&action=get_live_streams")).then(r=>r.json());
+    state.vodStreams  = await fetch(proxyAPI(base + "&action=get_vod_streams")).then(r=>r.json());
+    state.seriesList  = await fetch(proxyAPI(base + "&action=get_series")).then(r=>r.json());
   }
 
-  function renderUI() {
-    renderTabs();
-    renderSidebar();
-    renderContent();
-  }
-
-  function renderTabs() {
+  // ----------------------------
+  // TABS
+  // ----------------------------
+  function setupTabs() {
     const tabs = document.querySelectorAll(".tab-btn");
+
     tabs.forEach(btn => {
       btn.onclick = () => {
-        tabs.forEach(x => x.classList.remove("active"));
+        tabs.forEach(t => t.classList.remove("active"));
         btn.classList.add("active");
+
         state.activeTab = btn.dataset.tab;
+        state.activeCategory = "all";
+
         renderSidebar();
         renderContent();
       };
     });
   }
 
+  // ----------------------------
+  // SIDEBAR CATEGORIES
+  // ----------------------------
   function renderSidebar() {
     sidebarList.innerHTML = "";
 
     let categories = [];
 
-    if (state.activeTab === "live") categories = state.liveCats;
+    if (state.activeTab === "live")   categories = state.liveCats;
     if (state.activeTab === "movies") categories = state.vodCats;
     if (state.activeTab === "series") categories = state.seriesCats;
 
+    // ALL
     const all = document.createElement("div");
     all.className = "sidebar-item";
-    all.textContent = "All";
-    all.onclick = ()=>{ state.activeCategory="all"; renderContent(); };
+    all.innerText = "All";
+    all.onclick = () => {
+      state.activeCategory = "all";
+      renderContent();
+    };
     sidebarList.appendChild(all);
 
+    // CATEGORY LIST
     categories.forEach(cat => {
       const item = document.createElement("div");
       item.className = "sidebar-item";
-      item.textContent = cat.category_name;
+      item.innerText = cat.category_name;
       item.onclick = () => {
         state.activeCategory = cat.category_id;
         renderContent();
@@ -127,40 +155,46 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // ----------------------------
+  // CONTENT GRID
+  // ----------------------------
   function renderContent() {
     contentGrid.innerHTML = "";
 
     let list = [];
 
     if (state.activeTab === "live") {
-      list = state.activeCategory==="all"
+      list = state.activeCategory === "all"
         ? state.liveStreams
-        : state.liveStreams.filter(x=>String(x.category_id)===String(state.activeCategory));
+        : state.liveStreams.filter(s => String(s.category_id) === String(state.activeCategory));
     }
 
     if (state.activeTab === "movies") {
-      list = state.activeCategory==="all"
+      list = state.activeCategory === "all"
         ? state.vodStreams
-        : state.vodStreams.filter(x=>String(x.category_id)===String(state.activeCategory));
+        : state.vodStreams.filter(s => String(s.category_id) === String(state.activeCategory));
     }
 
     if (state.activeTab === "series") {
-      list = state.activeCategory==="all"
+      list = state.activeCategory === "all"
         ? state.seriesList
-        : state.seriesList.filter(x=>String(x.category_id)===String(state.activeCategory));
+        : state.seriesList.filter(s => String(s.category_id) === String(state.activeCategory));
     }
 
     list.forEach(item => {
       const card = document.createElement("div");
       card.className = "card";
 
-      card.innerHTML = `<div class="card-title">${item.name || item.stream_name}</div>`;
-
+      card.innerHTML = `<div class="card-title">${item.name}</div>`;
       card.onclick = () => playItem(item);
+
       contentGrid.appendChild(card);
     });
   }
 
+  // ----------------------------
+  // PLAY ITEM (LIVE / MOVIE / SERIES)
+  // ----------------------------
   function playItem(item) {
     titleEl.textContent = item.name;
 
@@ -178,19 +212,22 @@ document.addEventListener("DOMContentLoaded", () => {
       url = `${state.server}/series/${state.user}/${state.pass}/${item.series_id}.mp4`;
     }
 
-    const final = proxied(url);
+    const finalUrl = proxyVIDEO(url);
 
     if (Hls.isSupported()) {
       const hls = new Hls();
-      hls.loadSource(final);
+      hls.loadSource(finalUrl);
       hls.attachMedia(player);
-      hls.on(Hls.Events.MANIFEST_PARSED,()=>player.play());
+      hls.on(Hls.Events.MANIFEST_PARSED, () => player.play());
     } else {
-      player.src = final;
+      player.src = finalUrl;
       player.play();
     }
   }
 
+  // ----------------------------
+  // STATUS
+  // ----------------------------
   function setStatus(msg, error=false, success=false) {
     statusEl.textContent = msg;
     statusEl.className = "status-bar";
