@@ -7,41 +7,55 @@
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 </head>
+
 <body>
-  <div class="app">
-    <!-- Top bar / login -->
-    <header class="top-bar">
-      <div class="logo">IPTV<span>Cinema</span></div>
-      <form id="login-form" class="login-form">
-        <input id="serverUrl" placeholder="Server URL (e.g. http://line.din-ott.com)" />
-        <input id="username" placeholder="Username" />
-        <input id="password" type="password" placeholder="Password" />
-        <button type="submit">Connect</button>
-      </form>
-    </header>
+<div class="app">
 
-    <!-- Status -->
-    <div id="status" class="status-bar"></div>
+  <!-- TOP BAR -->
+  <header class="top-bar">
+    <div class="logo">IPTV<span>Cinema</span></div>
+    <form id="login-form" class="login-form">
+      <input id="serverUrl" placeholder="Server URL" value="http://line.din-ott.com" />
+      <input id="username" placeholder="Username" />
+      <input id="password" type="password" placeholder="Password" />
+      <button type="submit">Connect</button>
+    </form>
+  </header>
 
-    <!-- Main layout -->
-    <main class="main">
-      <!-- Left: categories & channels -->
-      <section class="left-panel">
-        <div class="section-title">Categories</div>
-        <div id="category-row" class="category-row"></div>
+  <!-- STATUS BAR -->
+  <div id="status" class="status-bar"></div>
 
-        <div class="section-title">Channels</div>
-        <div id="channel-grid" class="channel-grid"></div>
-      </section>
-
-      <!-- Right: player -->
-      <section class="right-panel">
-        <h2 id="current-title" class="current-title">Select a channel</h2>
-        <video id="player" controls playsinline></video>
-      </section>
-    </main>
+  <!-- TABS -->
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="live">LIVE TV</button>
+    <button class="tab-btn" data-tab="movies">MOVIES</button>
+    <button class="tab-btn" data-tab="series">SERIES</button>
   </div>
 
-  <script src="app.js"></script>
+  <!-- MAIN LAYOUT -->
+  <main class="main">
+    
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <h3 id="sidebar-title">Categories</h3>
+      <div id="sidebar-list" class="sidebar-list"></div>
+    </aside>
+
+    <!-- CONTENT AREA -->
+    <section class="content-area">
+      <div id="content-grid" class="content-grid"></div>
+    </section>
+
+  </main>
+
+  <!-- VIDEO PLAYER -->
+  <section class="player-section">
+    <h2 id="current-title">Select something to play</h2>
+    <video id="player" controls playsinline></video>
+  </section>
+
+</div>
+
+<script src="app.js"></script>
 </body>
 </html>
