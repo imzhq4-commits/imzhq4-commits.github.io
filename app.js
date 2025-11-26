@@ -1,238 +1,199 @@
-// =====================================================
-// IPTV Cinema - Full Xtream Codes Player
-// API Proxy: AllOrigins
-// VIDEO Proxy: Elfsight (HLS streaming capable)
-// =====================================================
+// ==========================
+// IPTV Cinema (Fixed Version)
+// API goes through Render proxy (HTTPS)
+// Video streaming goes directly (fast)
+// ==========================
 
-// API proxy (JSON only)
-const apiProxy = "https://api.allorigins.win/raw?url=";
-
-// VIDEO proxy (HLS + MP4 capable)
-const videoProxy = "https://cors-proxy.elfsight.com/?url=";
-
-function proxyAPI(url) {
-  return apiProxy + encodeURIComponent(url);
-}
-
-function proxyVIDEO(url) {
-  return videoProxy + encodeURIComponent(url);
-}
-
-// ==================================================================
+const API_PROXY = "https://proxy-github-io-fe2z.onrender.com/";  
+// Do NOT add extra slashes
 
 let state = {
-  server: "",
-  user: "",
-  pass: "",
-  activeTab: "live",
-  activeCategory: "all",
-  liveCats: [],
-  vodCats: [],
-  seriesCats: [],
-  liveStreams: [],
-  vodStreams: [],
-  seriesList: []
+  baseUrl: "",
+  username: "",
+  password: "",
+  categories: [],
+  channels: [],
+  activeCategoryId: "all"
 };
 
+// Remove trailing slashes
+function clean(url) {
+  return url.replace(/\/+$/, "");
+}
+
+// Proxy API (only API, NOT video)
+function api(url) {
+  return API_PROXY + url;
+}
+
+// MAIN
 document.addEventListener("DOMContentLoaded", () => {
-
   const loginForm = document.getElementById("login-form");
-  const statusEl = document.getElementById("status");
-  const sidebarList = document.getElementById("sidebar-list");
-  const contentGrid = document.getElementById("content-grid");
-  const titleEl = document.getElementById("current-title");
+  const status = document.getElementById("status");
+  const categoryRow = document.getElementById("category-row");
+  const channelGrid = document.getElementById("channel-grid");
   const player = document.getElementById("player");
+  const title = document.getElementById("current-title");
 
-  // ----------------------------
-  // LOGIN
-  // ----------------------------
+  // LOGIN HANDLER
   loginForm.addEventListener("submit", async (e) => {
     e.preventDefault();
 
-    state.server = document.getElementById("serverUrl").value.trim();
-    state.user = document.getElementById("username").value.trim();
-    state.pass = document.getElementById("password").value.trim();
+    // Get user input
+    state.baseUrl = clean(document.getElementById("serverUrl").value.trim());
+    state.username = document.getElementById("username").value.trim();
+    state.password = document.getElementById("password").value.trim();
 
-    if (!state.server || !state.user || !state.pass) {
-      setStatus("Please fill all fields", true);
+    if (!state.baseUrl || !state.username || !state.password) {
+      showStatus("Missing required fields.", true);
       return;
     }
 
-    setStatus("Logging in...");
-
-    const loginUrl =
-      `${state.server}/player_api.php?username=${state.user}&password=${state.pass}`;
+    showStatus("Login OK. Loading data…");
 
     try {
-      const loginResp = await fetch(proxyAPI(loginUrl));
+      // --------------------------
+      // 1. LOGIN
+      // --------------------------
+      const loginUrl =
+        `${state.baseUrl}/player_api.php?username=${state.username}&password=${state.password}`;
+
+      const loginResp = await fetch(api(loginUrl));
       const loginData = await loginResp.json();
 
       if (!loginData.user_info || loginData.user_info.status !== "Active") {
-        return setStatus("Login failed. Wrong username/password.", true);
+        showStatus("Login failed. Check username/password.", true);
+        return;
       }
 
-      setStatus("Login OK. Loading data...");
-      await loadAllData();
-      setupTabs();
-      renderSidebar();
-      renderContent();
+      // --------------------------
+      // 2. LIVE CATEGORIES
+      // --------------------------
+      const catUrl =
+        `${state.baseUrl}/player_api.php?username=${state.username}&password=${state.password}&action=get_live_categories`;
 
-      setStatus("Loaded ✔", false, true);
+      const catResp = await fetch(api(catUrl));
+      state.categories = await catResp.json();
 
-    } catch (err) {
-      console.error(err);
-      setStatus("Server error. Try again.", true);
+      // --------------------------
+      // 3. LIVE CHANNELS
+      // --------------------------
+      const chUrl =
+        `${state.baseUrl}/player_api.php?username=${state.username}&password=${state.password}&action=get_live_streams`;
+
+      const chResp = await fetch(api(chUrl));
+      state.channels = await chResp.json();
+
+      showStatus(`Loaded ${state.channels.length} channels.`, false, true);
+
+      buildCategories(categoryRow);
+      buildChannels(channelGrid, title, player);
+
+    } catch (error) {
+      console.error("ERROR:", error);
+      showStatus("Server error. Try again.", true);
     }
   });
 
-  // ----------------------------
-  // LOAD ALL API DATA
-  // ----------------------------
-  async function loadAllData() {
-    const base = `${state.server}/player_api.php?username=${state.user}&password=${state.pass}`;
-
-    state.liveCats   = await fetch(proxyAPI(base + "&action=get_live_categories")).then(r=>r.json());
-    state.vodCats    = await fetch(proxyAPI(base + "&action=get_vod_categories")).then(r=>r.json());
-    state.seriesCats = await fetch(proxyAPI(base + "&action=get_series_categories")).then(r=>r.json());
-
-    state.liveStreams = await fetch(proxyAPI(base + "&action=get_live_streams")).then(r=>r.json());
-    state.vodStreams  = await fetch(proxyAPI(base + "&action=get_vod_streams")).then(r=>r.json());
-    state.seriesList  = await fetch(proxyAPI(base + "&action=get_series")).then(r=>r.json());
+  // STATUS MESSAGES
+  function showStatus(msg, error = false, success = false) {
+    status.textContent = msg;
+    status.classList.remove("error", "success");
+    if (error) status.classList.add("error");
+    if (success) status.classList.add("success");
   }
 
-  // ----------------------------
-  // TABS
-  // ----------------------------
-  function setupTabs() {
-    const tabs = document.querySelectorAll(".tab-btn");
+  // ==========================
+  // BUILD CATEGORIES
+  // ==========================
+  function buildCategories(container) {
+    container.innerHTML = "";
 
-    tabs.forEach(btn => {
-      btn.onclick = () => {
-        tabs.forEach(t => t.classList.remove("active"));
-        btn.classList.add("active");
-
-        state.activeTab = btn.dataset.tab;
-        state.activeCategory = "all";
-
-        renderSidebar();
-        renderContent();
-      };
-    });
-  }
-
-  // ----------------------------
-  // SIDEBAR CATEGORIES
-  // ----------------------------
-  function renderSidebar() {
-    sidebarList.innerHTML = "";
-
-    let categories = [];
-
-    if (state.activeTab === "live")   categories = state.liveCats;
-    if (state.activeTab === "movies") categories = state.vodCats;
-    if (state.activeTab === "series") categories = state.seriesCats;
-
-    // ALL
+    // "All" button
     const all = document.createElement("div");
-    all.className = "sidebar-item";
-    all.innerText = "All";
+    all.className = "category-pill active";
+    all.textContent = "All";
     all.onclick = () => {
-      state.activeCategory = "all";
-      renderContent();
+      state.activeCategoryId = "all";
+      highlight(container);
+      buildChannels(
+        document.getElementById("channel-grid"),
+        document.getElementById("current-title"),
+        document.getElementById("player")
+      );
     };
-    sidebarList.appendChild(all);
+    container.appendChild(all);
 
-    // CATEGORY LIST
-    categories.forEach(cat => {
-      const item = document.createElement("div");
-      item.className = "sidebar-item";
-      item.innerText = cat.category_name;
-      item.onclick = () => {
-        state.activeCategory = cat.category_id;
-        renderContent();
+    // Each category
+    state.categories.forEach(cat => {
+      const pill = document.createElement("div");
+      pill.className = "category-pill";
+      pill.dataset.id = cat.category_id;
+      pill.textContent = cat.category_name;
+      pill.onclick = () => {
+        state.activeCategoryId = String(cat.category_id);
+        highlight(container);
+        buildChannels(
+          document.getElementById("channel-grid"),
+          document.getElementById("current-title"),
+          document.getElementById("player")
+        );
       };
-      sidebarList.appendChild(item);
+      container.appendChild(pill);
     });
   }
 
-  // ----------------------------
-  // CONTENT GRID
-  // ----------------------------
-  function renderContent() {
-    contentGrid.innerHTML = "";
+  // Highlight selected category
+  function highlight(container) {
+    container.querySelectorAll(".category-pill").forEach(p => {
+      p.classList.remove("active");
+      if (
+        p.dataset.id === state.activeCategoryId ||
+        (state.activeCategoryId === "all" && !p.dataset.id)
+      ) {
+        p.classList.add("active");
+      }
+    });
+  }
 
-    let list = [];
+  // ==========================
+  // BUILD CHANNELS
+  // ==========================
+  function buildChannels(grid, titleEl, videoEl) {
+    grid.innerHTML = "";
 
-    if (state.activeTab === "live") {
-      list = state.activeCategory === "all"
-        ? state.liveStreams
-        : state.liveStreams.filter(s => String(s.category_id) === String(state.activeCategory));
-    }
+    const filtered =
+      state.activeCategoryId === "all"
+        ? state.channels
+        : state.channels.filter(
+            c => String(c.category_id) === state.activeCategoryId
+          );
 
-    if (state.activeTab === "movies") {
-      list = state.activeCategory === "all"
-        ? state.vodStreams
-        : state.vodStreams.filter(s => String(s.category_id) === String(state.activeCategory));
-    }
-
-    if (state.activeTab === "series") {
-      list = state.activeCategory === "all"
-        ? state.seriesList
-        : state.seriesList.filter(s => String(s.category_id) === String(state.activeCategory));
-    }
-
-    list.forEach(item => {
+    filtered.forEach(ch => {
       const card = document.createElement("div");
-      card.className = "card";
+      card.className = "channel-card";
 
-      card.innerHTML = `<div class="card-title">${item.name}</div>`;
-      card.onclick = () => playItem(item);
+      card.innerHTML = `
+        <div class="channel-name">${ch.name}</div>
+        <div class="channel-meta">LIVE</div>
+      `;
 
-      contentGrid.appendChild(card);
+      card.onclick = () => playChannel(ch, titleEl, videoEl);
+
+      grid.appendChild(card);
     });
   }
 
-  // ----------------------------
-  // PLAY ITEM (LIVE / MOVIE / SERIES)
-  // ----------------------------
-  function playItem(item) {
-    titleEl.textContent = item.name;
+  // ==========================
+  // PLAY VIDEO (DIRECT STREAM)
+  // ==========================
+  function playChannel(ch, titleEl, videoEl) {
+    titleEl.textContent = ch.name;
 
-    let url = "";
+    const streamUrl =
+      `${state.baseUrl}/live/${state.username}/${state.password}/${ch.stream_id}.m3u8`;
 
-    if (state.activeTab === "live") {
-      url = `${state.server}/live/${state.user}/${state.pass}/${item.stream_id}.m3u8`;
-    }
-
-    if (state.activeTab === "movies") {
-      url = `${state.server}/movie/${state.user}/${state.pass}/${item.stream_id}.mp4`;
-    }
-
-    if (state.activeTab === "series") {
-      url = `${state.server}/series/${state.user}/${state.pass}/${item.series_id}.mp4`;
-    }
-
-    const finalUrl = proxyVIDEO(url);
-
-    if (Hls.isSupported()) {
-      const hls = new Hls();
-      hls.loadSource(finalUrl);
-      hls.attachMedia(player);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => player.play());
-    } else {
-      player.src = finalUrl;
-      player.play();
-    }
+    videoEl.src = streamUrl;
+    videoEl.play().catch(e => console.error("Play error:", e));
   }
-
-  // ----------------------------
-  // STATUS
-  // ----------------------------
-  function setStatus(msg, error=false, success=false) {
-    statusEl.textContent = msg;
-    statusEl.className = "status-bar";
-    if (error) statusEl.classList.add("error");
-    if (success) statusEl.classList.add("success");
-  }
-
 });
