@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>IPTV Cinema</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+</head>
+<body>
+
+  <div class="app">
+
+    <!-- TOP BAR -->
+    <header class="top-bar">
+      <div class="logo">IPTV<span>Cinema</span></div>
+      <form id="login-form" class="login-form">
+        <input id="serverUrl" placeholder="Server URL (e.g. http://line.din-ott.com)" />
+        <input id="username" placeholder="Username" />
+        <input id="password" type="password" placeholder="Password" />
+        <button type="submit">Connect</button>
+      </form>
+    </header>
+
+    <!-- STATUS -->
+    <div id="status" class="status-bar"></div>
+
+    <!-- MAIN LAYOUT -->
+    <main class="main">
+      <!-- LEFT: CATEGORIES + CHANNELS -->
+      <section class="left-panel">
+        <div class="section-title">Categories</div>
+        <div id="category-list" class="category-list"></div>
+
+        <div class="section-title">Channels</div>
+        <div id="channel-list" class="channel-list"></div>
+      </section>
+
+      <!-- RIGHT: PLAYER + EMBED -->
+      <section class="right-panel">
+        <h2 id="current-title" class="current-title">Select a channel</h2>
+
+        <video id="player" controls playsinline></video>
+        <button id="fullscreenBtn" class="full-btn">Fullscreen</button>
+
+        <div class="embed-box">
+          <textarea id="embedCode" readonly></textarea>
+          <button id="copyEmbed">Copy Embed Code</button>
+        </div>
+      </section>
+    </main>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
